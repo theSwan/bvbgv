@@ -7,6 +7,11 @@
 #include "flint/fmpz_vec.h"
 #include "flint/fmpz_poly.h"
 
+typedef struct sk_node_t {
+	fmpz_poly_mat_t sk;
+	struct sk_node_t *next;
+}sk_node_t;
+
 typedef struct pk_node_t {
 	fmpz_poly_mat_t a;
 	fmpz_poly_mat_t b;
@@ -21,15 +26,70 @@ typedef struct param_node_t {
 }param_node_t;
 
 const double pi = 3.1415926;
-static long secparam, n;
+static long secparam, d;
+/* denote d in fx */
 static double dvn;
 /* standard deviation of Guassian distribution*/
 static fmpz_t t, bound;
 static fmpz_poly_t fx;
 /* for R = Z[x]/(x^d + 1); fx = x^d + 1 */
-static fmpz *ctr;
-static int d;
-/* denote d in fx */
+sk_node_t *skhead;
+pk_node_t *pkhead;
+
+
+void bgv_set_d(long td)
+{
+	d = td;
+}
+
+long bgv_get_d()
+{
+	return d;
+}
+
+void bgv_set_secparam(long sp)
+{
+	secparam = sp;
+}
+
+long bgv_get_secparam()
+{
+	return secparam;
+}
+
+void bgv_set_dvn(double tdvn)
+{
+	dvn = tdvn;
+}
+
+double bgv_get_dvn()
+{
+	return dvn;
+}
+
+void bgv_set_t(int vt)
+{
+	fmpz_set_ui(t, vt);
+}
+
+void bgv_set_bound(int vb)
+{
+	fmpz_set_ui(bound, vb);
+}
+
+void bv_sym_vars_init()
+{
+	fmpz_init(bound);
+	fmpz_init(t);
+	fmpz_poly_init(fx);
+}
+
+void bv_sym_vars_clear()
+{
+	fmpz_clear(bound);
+	fmpz_clear(t);
+	fmpz_poly_clear(fx);
+}
 
 param_node_t *param_node_init(param_node_t *pnt)
 {
@@ -42,8 +102,8 @@ param_node_t *param_node_init(param_node_t *pnt)
 
 fmpz *samplez(fmpz *vec)
 {
-	long n = bv_sym_get_n();
-	if ( n == 0 )
+	long ele = bgv_get_d();
+	if ( ele == 0 )
 		return;
 	double tdvn = bv_sym_get_dvn();
 	long a = (long)ceil(-10*tdvn);
@@ -56,7 +116,7 @@ fmpz *samplez(fmpz *vec)
 	hcrypt_random(randseed, len);
 	unsigned long int useed = mpz_get_ui(randseed);
 	srand(useed);
-	for( i = 0 ; i < n ; i++) {
+	for( i = 0 ; i < ele ; i++) {
 		do {
 			x = rand()%(b - a) + a;
 			p = exp(-pi*x / ( tdvn * tdvn));
@@ -71,8 +131,8 @@ fmpz *samplez(fmpz *vec)
 void guassian_poly(fmpz *c, fmpz_poly_t poly)
 {
 	fmpz *tmp = samplez(c);
-	long k, n = bv_sym_get_n();
-	for( k = 0 ; k < n ; k++ ) {
+	long k, ele = bgv_get_d();
+	for( k = 0 ; k < ele ; k++ ) {
 		fmpz_poly_set_coeff_si(poly, k, tmp[k]);
 	}
 }
@@ -94,8 +154,8 @@ void unif_poly(fmpz_poly_t poly)
 	gmp_randinit_default(gmpstate);
 	gmp_randseed_ui(gmpstate, useed);
 
-	long n = bv_swhe_get_n();
-	for( i = 0 ; i < n ; i++ ) {
+	long ele = bgv_get_d();
+	for( i = 0 ; i < ele ; i++ ) {
 		mpz_urandomb(rndnum, gmpstate, qbit);
 		fmpz_set_mpz(rndfmpz, rndnum);
 		fmpz_poly_set_coeff_fmpz(poly, i, rndfmpz);
@@ -144,28 +204,45 @@ void hcrypt_random(fmpz_t r, int len) {
 	mpz_clear(tmp);
 }
 
-param_node_t *E_setup(int miu, int lamda, int b, param_node_t *param)
+param_node_t *e_setup(int miu, int lamda, int b, param_node_t *param)
 {
 	hcrypt_random(param->q, miu);
 	fmpz_t tmp;
-    fmpz_init(tmp);
-    fmpz_fdiv_q(tmp, param->q, bound);
-    long prod;
-    prod = lamda * fmpz_flog_ui(tmp, 2);
+	fmpz_init(tmp);
+	fmpz_fdiv_q(tmp, param->q, bound);
+	long prod;
+	prod = lamda * fmpz_flog_ui(tmp, 2);
 
 	if(b == 0) {
 		d = 1;
 		param->n = prod;
 	}  /* LWE */
 	else {
-        param->n = 1;
-        d = prod;
-    } /* RLWE */
+		param->n = 1;
+		d = prod;
+	} /* RLWE */
 
-    param->bign = ceil((2 * param->n + 1) * fmpz_flog_ui(param->q,2));
-    return param;
+	param->bign = ceil((2 * param->n + 1) * fmpz_flog_ui(param->q,2));
+	return param;
 }
 
+sk_node_t *e_skeygen(param_node_t *param)
+{
+        sk_node_t *sknode;
+        sknode = (sk_node_t *)malloc(sizeof(sk_node_t));
+        fmpz_poly_mat_init(sknode->sk, 1, 1 + param->n);
+        sknode->next = NULL;
+        fmpz *coeffs = _fmpz_vec_init(d);
+        fmpz_poly_t poly;
+        fmpz_poly_init(poly);
+        fmpz_poly_set_coeff_si(poly, 0, 1);
+        fmpz_poly_set(fmpz_poly_mat_entry(sknode->sk, 0, 0), poly);
+        long i;
+        for( i = 0 ; i < param->n ; i++ ) {
+                guassian_poly(coeffs, fmpz_poly_mat_entry(sknode->sk, 0, i));
+        }
+        return sknode;
+}
 
 
 
