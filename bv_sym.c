@@ -3,14 +3,14 @@
 #include <time.h>
 #include <math.h>
 #include <string.h>
-#include <gmp.h>  
+#include <gmp.h>
 #include "flint/fmpz_vec.h"
 #include "flint/fmpz_poly.h"
 
 typedef struct sk_node_t{
 	fmpz_poly_t sknode;
 	struct sk_node_t *next;
-} sk_node_t; 
+} sk_node_t;
 
 typedef struct bv_sym_ct{
 	sk_node_t *front, *rear;
@@ -20,7 +20,7 @@ typedef struct bv_sym_ct{
 sk_node_t *sk_head;
 const double pi = 3.1415926;
 static long secparam, n;
-static double dvn; /* standard deviation of Guassian distribution*/ 
+static double dvn; /* standard deviation of Guassian distribution*/
 static fmpz_t q,t;
 static fmpz_poly_t fx;
 static fmpz *ctr;
@@ -77,11 +77,11 @@ bv_sym_ct *bv_sym_ctadd(bv_sym_ct *ct, fmpz_poly_t fp)
 	fmpz_poly_set(tmp->sknode, fp);
 	tmp->next = NULL;
 	if ( ct->rear == NULL) {
-		ct->front = ct->rear = tmp;		
+		ct->front = ct->rear = tmp;
 	}
 	else {
 		ct->rear->next = tmp;
-		ct->rear = tmp;		
+		ct->rear = tmp;
 	}
 	ct->len = ct->len + 1;
 	return ct;
@@ -166,7 +166,7 @@ void hcrypt_random(mpz_t r, int len) {
 				*bytes = *bytes % (1 << leftover);
 			}
 			mpz_import(r, bytecount, 1, 1, 0, 0, bytes);
-			flag = 1;			
+			flag = 1;
 		}
 		fclose(fp);
 		free(bytes);
@@ -185,7 +185,7 @@ void hcrypt_random(mpz_t r, int len) {
 }
 
 fmpz *bv_sym_samplez(fmpz *vec)
-{  
+{
 	long n = bv_sym_get_n();
 	if ( n == 0 )
 		return;
@@ -224,14 +224,19 @@ void bv_sym_guassian_poly(fmpz *c, fmpz_poly_t poly)
 void bv_sym_unif_poly(fmpz_poly_t poly)
 {
 	int i;
+	int len = sizeof(unsigned long int);
+	mpz_t randseed;
+	mpz_init(randseed);
+	hcrypt_random(randseed, len);
+	unsigned long int useed = mpz_get_ui(randseed);
 	mpz_t rndnum;
-	fmpz_t rndfmpz;	
+	fmpz_t rndfmpz;
 	gmp_randstate_t gmpstate;
 
 	mpz_init(rndnum);
 	fmpz_init(rndfmpz);
 	gmp_randinit_default(gmpstate);
-	gmp_randseed_ui(gmpstate, (unsigned long)time(0) + (chrnd++));
+	gmp_randseed_ui(gmpstate, useed);
 
 	long n = bv_sym_get_n();
 	for( i = 0 ; i < n ; i++ ) {
@@ -239,6 +244,7 @@ void bv_sym_unif_poly(fmpz_poly_t poly)
 		fmpz_set_mpz(rndfmpz, rndnum);
 		fmpz_poly_set_coeff_fmpz(poly, i, rndfmpz);
 	}
+	mpz_clear(randseed);
 	fmpz_clear(rndfmpz);
 	gmp_randclear(gmpstate);
 	mpz_clear(rndnum);
@@ -302,8 +308,8 @@ bv_sym_ct *bv_sym_add(bv_sym_ct *ct, bv_sym_ct *ct1, bv_sym_ct *ct2)
 	sk_node_t *list1, *list2;
 	list1 = ct1->front;
 	list2 = ct2->front;
-	if ( len1 < len2 ) {	
-		while ( list1 != NULL ) {			
+	if ( len1 < len2 ) {
+		while ( list1 != NULL ) {
 			fmpz_poly_add(tmp, list1->sknode, list2->sknode);
 			fmpz_poly_rem_basecase(tmp, tmp, fx);
 			fmpz_poly_scalar_smod_fmpz(tmp, tmp, q);
@@ -317,8 +323,8 @@ bv_sym_ct *bv_sym_add(bv_sym_ct *ct, bv_sym_ct *ct1, bv_sym_ct *ct2)
 			list2 = list2->next;
 		}
 	}
-	else {	
-		while ( list2 != NULL ) {			
+	else {
+		while ( list2 != NULL ) {
 			fmpz_poly_add(tmp, list1->sknode, list2->sknode);
 			fmpz_poly_rem_basecase(tmp, tmp, fx);
 			fmpz_poly_scalar_smod_fmpz(tmp, tmp, q);
@@ -331,7 +337,7 @@ bv_sym_ct *bv_sym_add(bv_sym_ct *ct, bv_sym_ct *ct1, bv_sym_ct *ct2)
 			ct = bv_sym_ctadd(ct, tmp);
 			list1 = list1->next;
 		}
-	}	
+	}
 	fmpz_poly_clear(tmp);
 	return ct;
 }
@@ -348,7 +354,7 @@ bv_sym_ct *bv_sym_mul(bv_sym_ct *ct, bv_sym_ct *ct1, bv_sym_ct *ct2)
 	for(k = 0 ; k < len ; k++) {
 		fmpz_poly_zero(tmp);
 		list1 = ct1->front;
-		
+
 		for(i=0 ; i<len1 ; i++) {
 			list2 = ct2->front;
 			for(j=0 ; j<len2 ; j++) {
@@ -413,32 +419,32 @@ int main()
 	bv_sym_keygen(sk);
 	finish1=clock();
 	dur1 = (double)(finish1 - start1) / CLOCKS_PER_SEC;
-	printf( "keygen: %f seconds\n", dur1); 	
+	printf( "keygen: %f seconds\n", dur1);
 
 	start2=clock();
 	ct = bv_sym_encrypt(sk, ms, ct);
 	finish2=clock();
 	dur2 = (double)(finish2 - start2) / CLOCKS_PER_SEC;
-	printf( "encrypt: %f seconds\n", dur2); 
+	printf( "encrypt: %f seconds\n", dur2);
 
 	start3=clock();
 	ct1 = bv_sym_add(ct1, ct, ct);
 	finish3=clock();
 	dur3 = (double)(finish3 - start3) / CLOCKS_PER_SEC;
-	printf( "add: %f seconds\n", dur3); 
+	printf( "add: %f seconds\n", dur3);
 
 	start4=clock();
 	ct1 = bv_sym_mul(ct1, ct, ct);
 	finish4=clock();
 	dur4 = (double)(finish4 - start4) / CLOCKS_PER_SEC;
-	printf( "mul: %f seconds\n", dur4); 
+	printf( "mul: %f seconds\n", dur4);
 
 	start5=clock();
 	bv_sym_decrypt(m1, ct1);
 	finish5=clock();
 	dur5 = (double)(finish5 - start5) / CLOCKS_PER_SEC;
-	printf( "decrypt: %f seconds\n", dur5); 	
-	//fmpz_poly_print(m1);	
+	printf( "decrypt: %f seconds\n", dur5);
+	//fmpz_poly_print(m1);
 	//printf("\n");
 	return 0;
-}		
+}

@@ -14,27 +14,27 @@
 typedef struct hk_node_t{
 	fmpz_poly_t a,b;
 	struct hk_node_t *next;
-} hk_node_t;                        
+} hk_node_t;
 
 hk_node_t *head;
 const double pi = 3.1415926;
 static long n;
-static double dvn; /* standard deviation of Guassian distribution*/ 
+static double dvn; /* standard deviation of Guassian distribution*/
 static fmpz_t q,t;
 static fmpz_poly_t fx;
 static fmpz *ctr;
 int bits[17000][500];
 static int qbit;
-static int d;
+static int multimes;  /* mul times */
 static long chrnd = 0;
-void bv_swhe_set_d(int vd)
+void bv_swhe_set_multimes(int mt)
 {
-	d = vd;
+	multimes = mt;
 }
 
-int bv_swhe_get_d()
+int bv_swhe_get_multimes()
 {
-	return d;
+	return multimes;
 }
 
 void bv_swhe_set_t(int vt)
@@ -113,7 +113,7 @@ void hcrypt_random(mpz_t r, int len) {
 				*bytes = *bytes % (1 << leftover);
 			}
 			mpz_import(r, bytecount, 1, 1, 0, 0, bytes);
-			flag = 1;			
+			flag = 1;
 		}
 		fclose(fp);
 		free(bytes);
@@ -132,7 +132,7 @@ void hcrypt_random(mpz_t r, int len) {
 }
 
 fmpz *bv_swhe_samplez(fmpz *vec)
-{  
+{
 	long n = bv_swhe_get_n();
 	if ( n == 0 )
 		return;
@@ -171,14 +171,19 @@ void bv_swhe_guassian_poly(fmpz *c, fmpz_poly_t poly)
 void bv_swhe_unif_poly(fmpz_poly_t poly)
 {
 	int i;
+	int len = sizeof(unsigned long int);
+	mpz_t randseed;
+	mpz_init(randseed);
+	hcrypt_random(randseed, len);
+	unsigned long int useed = mpz_get_ui(randseed);
 	mpz_t rndnum;
-	fmpz_t rndfmpz;	
+	fmpz_t rndfmpz;
 	gmp_randstate_t gmpstate;
 
 	mpz_init(rndnum);
 	fmpz_init(rndfmpz);
 	gmp_randinit_default(gmpstate);
-	gmp_randseed_ui(gmpstate, (unsigned long)time(0) + (chrnd++));
+	gmp_randseed_ui(gmpstate, useed);
 
 	long n = bv_swhe_get_n();
 	for( i = 0 ; i < n ; i++ ) {
@@ -186,6 +191,7 @@ void bv_swhe_unif_poly(fmpz_poly_t poly)
 		fmpz_set_mpz(rndfmpz, rndnum);
 		fmpz_poly_set_coeff_fmpz(poly, i, rndfmpz);
 	}
+	mpz_clear(randseed);
 	fmpz_clear(rndfmpz);
 	gmp_randclear(gmpstate);
 	mpz_clear(rndnum);
@@ -197,14 +203,14 @@ void bv_swhe_keygen(fmpz_poly_t a0, fmpz_poly_t a1, fmpz_poly_t sk)
 {
 	long n = bv_swhe_get_n();
 
-	bv_swhe_guassian_poly(ctr, sk);  
+	bv_swhe_guassian_poly(ctr, sk);
 	fmpz_poly_t e;
 	fmpz_poly_init(e);
 	bv_swhe_guassian_poly(ctr, e);
 
 	int i, j;
 
-	bv_swhe_unif_poly(a1);  
+	bv_swhe_unif_poly(a1);
 
 	fmpz_poly_t tmp, tmp1, tmp2, sk2;
 	fmpz_poly_init(tmp);
@@ -218,7 +224,7 @@ void bv_swhe_keygen(fmpz_poly_t a0, fmpz_poly_t a1, fmpz_poly_t sk)
 	fmpz_poly_add(tmp2, tmp1, tmp);
 	fmpz_poly_scalar_smod_fmpz(tmp2, tmp2, q);
 	fmpz_poly_rem_basecase(tmp2, tmp2, fx);
-	fmpz_poly_neg(a0, tmp2); 
+	fmpz_poly_neg(a0, tmp2);
 
 	hk_node_t *s, *r;
 	fmpz_t ti;
@@ -231,7 +237,7 @@ void bv_swhe_keygen(fmpz_poly_t a0, fmpz_poly_t a1, fmpz_poly_t sk)
 	for( i = 0 ; i <= len ; i++ ) {
 		s = (hk_node_t *)malloc(sizeof(hk_node_t));
 		fmpz_poly_init(s->a);
-		bv_swhe_unif_poly(s->a);  
+		bv_swhe_unif_poly(s->a);
 		bv_swhe_guassian_poly(ctr, e);
 		fmpz_poly_init(s->b);
 		fmpz_poly_mul(tmp, s->a, sk);
@@ -246,7 +252,7 @@ void bv_swhe_keygen(fmpz_poly_t a0, fmpz_poly_t a1, fmpz_poly_t sk)
 		r = s;
 	}
 
-	r->next = NULL;  
+	r->next = NULL;
 
 	fmpz_poly_clear(sk2);
 	fmpz_poly_clear(e);
@@ -254,7 +260,7 @@ void bv_swhe_keygen(fmpz_poly_t a0, fmpz_poly_t a1, fmpz_poly_t sk)
 	fmpz_poly_clear(tmp1);
 	fmpz_poly_clear(tmp2);
 
-}  
+}
 
 void bv_swhe_encrypt(fmpz_poly_t m, fmpz_poly_t c0, fmpz_poly_t c1, fmpz_poly_t a0, fmpz_poly_t a1)
 {
@@ -269,19 +275,19 @@ void bv_swhe_encrypt(fmpz_poly_t m, fmpz_poly_t c0, fmpz_poly_t c1, fmpz_poly_t 
 
 	fmpz_poly_init(tmp);
 	fmpz_poly_init(tmp1);
-	fmpz_poly_mul(tmp, a0, u);   
+	fmpz_poly_mul(tmp, a0, u);
 	fmpz_poly_scalar_mul_fmpz(tmp1, g, t);
 	fmpz_poly_add(tmp, tmp, tmp1);
-	fmpz_poly_add(tmp, tmp, m);   
+	fmpz_poly_add(tmp, tmp, m);
 	fmpz_poly_rem_basecase(tmp, tmp, fx);
 	fmpz_poly_scalar_smod_fmpz(c0, tmp, q);
-		                               
-	fmpz_poly_mul(tmp, a1, u);   
+
+	fmpz_poly_mul(tmp, a1, u);
 	fmpz_poly_scalar_mul_fmpz(tmp1, f, t);
 	fmpz_poly_add(tmp, tmp, tmp1);
 	fmpz_poly_rem_basecase(tmp, tmp, fx);
 	fmpz_poly_scalar_smod_fmpz(c1, tmp, q);
-		                               
+
 	fmpz_poly_clear(u);
 	fmpz_poly_clear(f);
 	fmpz_poly_clear(g);
@@ -293,14 +299,14 @@ void bv_swhe_decrypt(fmpz_poly_t m, fmpz_poly_t c0, fmpz_poly_t c1, fmpz_poly_t 
 {
 	fmpz_poly_t tmp;
 	long n = bv_swhe_get_n();
-	fmpz_poly_init(tmp); 
+	fmpz_poly_init(tmp);
 	fmpz_poly_mul(tmp, c1, sk);
 	fmpz_poly_scalar_smod_fmpz(tmp, tmp, q);
 	fmpz_poly_rem_basecase(tmp, tmp, fx);
 	fmpz_poly_add(tmp, tmp, c0);
 	fmpz_poly_scalar_smod_fmpz(tmp, tmp, q);
 	fmpz_poly_scalar_mod_fmpz(m, tmp, t);
-		                          
+
 	fmpz_poly_clear(tmp);
 }
 
@@ -321,16 +327,16 @@ void bv_swhe_mul(fmpz_poly_t c10, fmpz_poly_t c11, fmpz_poly_t c20, fmpz_poly_t 
 	fmpz_poly_init(tmp2);
 	fmpz_poly_mul(tmp2, c11, c21);
 	fmpz_poly_rem_basecase(tmp2, tmp2, fx);
-	fmpz_poly_scalar_smod_fmpz(tmp0, tmp0, q);  
-	fmpz_poly_scalar_smod_fmpz(tmp1, tmp1, q);  
-	fmpz_poly_scalar_mod_fmpz(tmp2, tmp2, q);  
+	fmpz_poly_scalar_smod_fmpz(tmp0, tmp0, q);
+	fmpz_poly_scalar_smod_fmpz(tmp1, tmp1, q);
+	fmpz_poly_scalar_mod_fmpz(tmp2, tmp2, q);
 
 	int len = ceil(log(lq)/log(lt)) - 1;
 	int i, j;
 	unsigned long long hold;
 	memset(bits, 0, sizeof(bits));
 	for ( i = 0 ; i < fmpz_poly_length(tmp2) ; ++i ) {
-		hold = fmpz_poly_get_coeff_ui(tmp2,i);		    
+		hold = fmpz_poly_get_coeff_ui(tmp2,i);
 		j = 0;
 		while ( hold != 0 ) {
 			bits[i][j++] = hold%lt;
@@ -355,8 +361,8 @@ void bv_swhe_mul(fmpz_poly_t c10, fmpz_poly_t c11, fmpz_poly_t c20, fmpz_poly_t 
 
 	fmpz_poly_rem_basecase(nc0, tmp0, fx);
 	fmpz_poly_rem_basecase(nc1, tmp1, fx);
-	fmpz_poly_scalar_smod_fmpz(nc0, nc0, q);  
-	fmpz_poly_scalar_smod_fmpz(nc1, nc1, q);  
+	fmpz_poly_scalar_smod_fmpz(nc0, nc0, q);
+	fmpz_poly_scalar_smod_fmpz(nc1, nc1, q);
 
 	fmpz_poly_clear(tmp);
 	fmpz_poly_clear(tmp1);
@@ -382,7 +388,7 @@ void test_mul(fmpz_poly_t test0,fmpz_poly_t test1,fmpz_poly_t nc0,fmpz_poly_t nc
 	fmpz_poly_set(tmp2,test1);
 
 	int i;
-	for(i=2;i<=d;i++) {
+	for(i=2;i<=bv_swhe_get_multimes();i++) {
 		bv_swhe_mul(test0,test1,tmp1,tmp2,nc0,nc1);
 		fmpz_poly_set(tmp1,nc0);
 		fmpz_poly_set(tmp2,nc1);
@@ -392,13 +398,13 @@ void test_mul(fmpz_poly_t test0,fmpz_poly_t test1,fmpz_poly_t nc0,fmpz_poly_t nc
 /* test */
 
 int main()
-{  
-	fmpz_poly_t a0,a1,sk,c10,c11,m1,nc0,nc1,m; 
+{
+	fmpz_poly_t a0,a1,sk,c10,c11,m1,nc0,nc1,m;
 
 	bv_swhe_vars_init();
 	bv_swhe_set_n(16);
 	bv_swhe_set_dvn(8.0);
-	bv_swhe_set_d(2);
+	bv_swhe_set_multimes(2);
 	bv_swhe_set_t(2);
 	bv_swhe_set_lgq(23);
 
@@ -407,14 +413,14 @@ int main()
 	fmpz_poly_init(sk);
 	fmpz_poly_init(m1);
 	fmpz_poly_init(c10);
-	fmpz_poly_init(c11); 
+	fmpz_poly_init(c11);
 
 	fmpz_poly_init(m);
 	fmpz_poly_init(nc0);
-	fmpz_poly_init(nc1); 
+	fmpz_poly_init(nc1);
 	fmpz_poly_set_coeff_si(m1,2,1);
-	fmpz_poly_set_coeff_si(m1,0,1);  	
-	 
+	fmpz_poly_set_coeff_si(m1,0,1);
+
 
 	clock_t start1, finish1, start2, finish2, start3, finish3, start4, finish4, start5, finish5;
 	double  dur1,dur2,dur3,dur4,dur5;
@@ -422,31 +428,31 @@ int main()
 	bv_swhe_keygen(a0,a1,sk);
 	finish1=clock();
 	dur1 = (double)(finish1 - start1) / CLOCKS_PER_SEC;
-	printf( "keygen: %f seconds\n", dur1); 	
+	printf( "keygen: %f seconds\n", dur1);
 
 	start2=clock();
 	bv_swhe_encrypt(m1,c10,c11,a0,a1);
 	finish2=clock();
 	dur2 = (double)(finish2 - start2) / CLOCKS_PER_SEC;
-	printf( "encrypt: %f seconds\n", dur2); 
+	printf( "encrypt: %f seconds\n", dur2);
 
 	start3=clock();
 	bv_swhe_add(c10,c11,c10,c11,nc0,nc1);
 	finish3=clock();
 	dur3 = (double)(finish3 - start3) / CLOCKS_PER_SEC;
-	printf( "add: %f seconds\n", dur3); 
+	printf( "add: %f seconds\n", dur3);
 
 	start4=clock();
 	bv_swhe_mul(c10,c11,c10,c11,nc0,nc1);
 	finish4=clock();
 	dur4 = (double)(finish4 - start4) / CLOCKS_PER_SEC;
-	printf( "mul: %f seconds\n", dur4); 
+	printf( "mul: %f seconds\n", dur4);
 
 	start5=clock();
-	bv_swhe_decrypt(m,nc0,nc1,sk); 
+	bv_swhe_decrypt(m,nc0,nc1,sk);
 	finish5=clock();
 	dur5 = (double)(finish5 - start5) / CLOCKS_PER_SEC;
-	printf( "decrypt: %f seconds\n", dur5); 
+	printf( "decrypt: %f seconds\n", dur5);
 	fmpz_poly_clear(a0);
 	fmpz_poly_clear(a1);
 	fmpz_poly_clear(sk);
@@ -457,5 +463,5 @@ int main()
 	fmpz_poly_clear(nc1);
 	fmpz_poly_clear(m);
 	bv_swhe_vars_clear();
-	return 0;	
+	return 0;
 }
