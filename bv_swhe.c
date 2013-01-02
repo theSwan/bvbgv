@@ -10,6 +10,8 @@
 #include <gmp.h>
 #include "flint/fmpz_vec.h"
 #include "flint/fmpz_poly.h"
+#include "flint/fmpz.h"
+#include "flint/fmpz_mat.h"
 
 typedef struct hk_node_t{
 	fmpz_poly_t a,b;
@@ -23,7 +25,6 @@ static double dvn; /* standard deviation of Guassian distribution*/
 static fmpz_t q,t;
 static fmpz_poly_t fx;
 static fmpz *ctr;
-int bits[17000][500];
 static int qbit;
 static int multimes;  /* mul times */
 static long chrnd = 0;
@@ -334,16 +335,19 @@ void bv_swhe_mul(fmpz_poly_t c10, fmpz_poly_t c11, fmpz_poly_t c20, fmpz_poly_t 
 	fmpz_poly_scalar_smod_fmpz(tmp1, tmp1, q);
 	fmpz_poly_scalar_mod_fmpz(tmp2, tmp2, q);
 
-	int len = ceil(log(lq)/log(lt)) - 1;
-	int i, j;
-	unsigned long long hold;
-	memset(bits, 0, sizeof(bits));
+	long len = fmpz_clog(q, t);
+	long i, j;
+	fmpz_t hold;
+	fmpz_init(hold);
+	fmpz_mat_t bits;
+	fmpz_mat_init(bits, fmpz_poly_length(tmp2), len);
 	for ( i = 0 ; i < fmpz_poly_length(tmp2) ; ++i ) {
-		hold = fmpz_poly_get_coeff_ui(tmp2,i);
+		fmpz_poly_get_coeff_fmpz(hold, tmp2, i);
 		j = 0;
-		while ( hold != 0 ) {
-			bits[i][j++] = hold%lt;
-			hold = hold/lt;
+		while ( !fmpz_is_zero(hold) ) {
+			fmpz_mod(fmpz_mat_entry(bits, i, j), hold, t);
+			fmpz_tdiv_q(hold, hold, t);
+			j++;
 		}
 	}
 	fmpz_poly_t xtmp,multmp;
@@ -351,9 +355,9 @@ void bv_swhe_mul(fmpz_poly_t c10, fmpz_poly_t c11, fmpz_poly_t c20, fmpz_poly_t 
 	fmpz_poly_init(multmp);
 	hk_node_t *r;
 	r = head->next;
-	for( i = 0 ; i <= len ; i++ ) {
+	for( i = 0 ; i < len ; i++ ) {
 		for( j = 0; j < fmpz_poly_length(tmp2) ; ++j ) {
-			fmpz_poly_set_coeff_si(xtmp, j, bits[j][i]);
+			fmpz_poly_set_coeff_fmpz(xtmp, j, fmpz_mat_entry(bits, j, i));
 		}
 		fmpz_poly_mul(multmp, xtmp, r->a);
 		fmpz_poly_add(tmp1, tmp1, multmp);
@@ -373,6 +377,8 @@ void bv_swhe_mul(fmpz_poly_t c10, fmpz_poly_t c11, fmpz_poly_t c20, fmpz_poly_t 
 	fmpz_poly_clear(tmp2);
 	fmpz_poly_clear(multmp);
 	fmpz_poly_clear(xtmp);
+	fmpz_clear(hold);
+	fmpz_mat_clear(bits);
 }
 
 void bv_swhe_add(fmpz_poly_t c10, fmpz_poly_t c11, fmpz_poly_t c20, fmpz_poly_t c21, fmpz_poly_t nc0, fmpz_poly_t nc1)
@@ -456,6 +462,8 @@ int main()
 	finish5=clock();
 	dur5 = (double)(finish5 - start5) / CLOCKS_PER_SEC;
 	printf( "decrypt: %f seconds\n", dur5);
+	fmpz_poly_print(m);
+	printf("\n");
 	fmpz_poly_clear(a0);
 	fmpz_poly_clear(a1);
 	fmpz_poly_clear(sk);
