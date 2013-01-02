@@ -39,6 +39,71 @@ static fmpz_poly_t fx;
 sk_node_t *skhead;
 pk_node_t *pkhead;
 static long chrnd = 0;
+
+void set_mspace(long vt);
+long get_mspace();
+void bgv_set_d(long td);
+long bgv_get_d();
+void bgv_set_secparam(long sp);
+long bgv_get_secparam();
+void bgv_set_dvn(double tdvn);
+double bgv_get_dvn();
+void bgv_set_bound(int vb);
+void bv_sym_vars_init();
+void bv_sym_vars_clear();
+void hcrypt_random(fmpz_t r, int len);
+fmpz *samplez(fmpz *vec);
+void guassian_poly(fmpz *c, fmpz_poly_t poly);
+void unif_poly(fmpz_poly_t poly, fmpz_t space);
+param_node_t *e_setup(int miu, int lamda, int b, param_node_t *param);
+sk_node_t *e_skeygen(param_node_t *param);
+void e_pkeygen(fmpz_poly_mat_t pk, param_node_t *param, fmpz_poly_mat_t sk);
+void e_encrypt(fmpz_poly_mat_t ct, param_node_t *param, fmpz_poly_mat_t pk, fmpz_poly_t ms);
+void e_decrypt(fmpz_poly_t ms, param_node_t *param, fmpz_poly_mat_t sk, fmpz_poly_mat_t ct);
+void bitdecomp(fmpz_poly_mat_t dc, fmpz_poly_mat_t x, fmpz_t qq);
+void powers(fmpz_poly_mat_t po, fmpz_poly_mat_t x, fmpz_t qq);
+void switchkeygen(fmpz_poly_mat_t mapb, fmpz_poly_mat_t s1, fmpz_poly_mat_t s2, fmpz_t qq);
+void switchkey(fmpz_poly_mat_t c2, fmpz_poly_mat_t mapb, fmpz_poly_mat_t c1, fmpz_t qq);
+
+void switchkey(fmpz_poly_mat_t c2, fmpz_poly_mat_t mapb, fmpz_poly_mat_t c1, fmpz_t qq)
+{
+	fmpz_poly_mat_t bd, bdt;
+	bitdecomp(bd, c1, qq);
+	long bdtrow, bdtcol, i, j, bcol;
+	bdtrow = fmpz_poly_mat_ncols(bd);
+	bdtcol = fmpz_poly_mat_nrows(bd);
+	bcol = fmpz_poly_mat_ncols(mapb);
+	fmpz_poly_mat_init(c2, bdtrow, bcol);
+	fmpz_poly_mat_init(bdt, bdtrow, bdtcol);
+	for( i = 0 ; i < bdtrow ; i++ ) {
+		for( j = 0 ; j < bdtcol ; j++ ) {
+			fmpz_poly_set(fmpz_poly_mat_entry(bdt, i, j), fmpz_poly_mat_entry(bd, j, i));
+		}
+	}
+	fmpz_poly_mat_mul(c2, bdt, mapb);
+}
+
+void switchkeygen(fmpz_poly_mat_t mapb, fmpz_poly_mat_t s1, fmpz_poly_mat_t s2, fmpz_t qq)
+{
+	fmpz_poly_mat_t sp1;
+	param_node_t *param;
+	param = (param_node_t *)malloc(sizeof(param_node_t));
+	long n1, n2, i;
+	n1 = fmpz_poly_mat_nrows(s1);
+	n2 = fmpz_poly_mat_nrows(s2)
+	param->n = n2 - 1;
+	param->bign = n1 * fmpz_clog(qq, t);
+	fmpz_init_set(param->q, qq);
+	param->next = NULL;
+	e_pkeygen(mapb, param, s2);
+	powers(sp1, s1, qq);
+	for( i = 0 ; i < param->bign ; i++) {
+		fmpz_poly_add(fmpz_poly_mat_entry(mapb, i, 0), fmpz_poly_mat_entry(mapb, i, 0), fmpz_poly_mat_entry(sp1, i, 0));
+	}	
+	fmpz_poly_mat_clear(sp1);
+	free(param);
+}
+
 void set_mspace(long vt)
 {
 	fmpz_set_ui(t, vt);
@@ -107,7 +172,8 @@ param_node_t *param_node_init(param_node_t *pnt)
 	return pnt;
 }
 
-void hcrypt_random(fmpz_t r, int len) {
+void hcrypt_random(fmpz_t r, int len)
+{
 	mpz_t tmp;
 	FILE *fp;
 	int flag = 0;
@@ -256,7 +322,7 @@ sk_node_t *e_skeygen(param_node_t *param)
         return sknode;
 }
 
-void e_pkeygen(fmpz_poly_mat_t pk, param_node_t *param, sk_node_t *sknode)
+void e_pkeygen(fmpz_poly_mat_t pk, param_node_t *param, fmpz_poly_mat_t sk)
 {
         fmpz_poly_mat_t ppk, ee, bb, ss, tmp, tmp1;
         fmpz_poly_mat_init(ppk, param->bign, param->n);
@@ -268,7 +334,7 @@ void e_pkeygen(fmpz_poly_mat_t pk, param_node_t *param, sk_node_t *sknode)
 
         long i, j;
         for( i = 0 ; i < param->n ; i++ ) {
-                fmpz_poly_set(fmpz_poly_mat_entry(ss, i, 0), fmpz_poly_mat_entry(sknode->sk, i+1, 0 ));
+                fmpz_poly_set(fmpz_poly_mat_entry(ss, i, 0), fmpz_poly_mat_entry(sk, i+1, 0 ));
         }
         for( i = 0 ; i < param->bign ; i++ ) {
                 guassian_poly(coeffs, fmpz_poly_mat_entry(ee, i, 0));
@@ -398,6 +464,25 @@ void bitdecomp(fmpz_poly_mat_t dc, fmpz_poly_mat_t x, fmpz_t qq)
 	fmpz_poly_clear(xtmp);
 	fmpz_mat_clear(bits);
 }
+
+void powers(fmpz_poly_mat_t po, fmpz_poly_mat_t x, fmpz_t qq)
+{
+	long xrow = fmpz_poly_mat_nrows(x);
+	long len = fmpz_clog(qq, t);
+	long qrow = xrow * len;
+	long i, j;
+	fmpz_poly_mat_init(po, qrow, 1);
+
+	for( i = 0 ; i < xrow ; i++) {
+		fmpz_poly_set(fmpz_poly_mat_entry(po, i, 0), fmpz_poly_mat_entry(x, i, 0));
+	}
+	for( i = 1 ; i < len ; i++) {
+		for( j = 0 ; j < xrow ; j++) {
+			fmpz_poly_scalar_mul_fmpz(fmpz_poly_mat_entry(po, j + i * xrow, 0), fmpz_poly_mat_entry(po, j + (i-1)*xrow, 0), t);
+		}
+	}
+}
+
 
 
 int main()
