@@ -7,6 +7,8 @@
 #include "flint/fmpz_vec.h"
 #include "flint/fmpz_poly.h"
 #include "flint/fmpz_poly_mat.h"
+#include "flint/fmpz.h"
+#include "flint/fmpz_mat.h"
 
 typedef struct sk_node_t {
 	fmpz_poly_mat_t sk;
@@ -23,7 +25,7 @@ typedef struct param_node_t {
 	fmpz_t q;
 	long n;
 	long bign;
-	param_node_t *next;
+	struct param_node_t *next;
 }param_node_t;
 
 const double pi = 3.1415926;
@@ -31,12 +33,21 @@ static long secparam, d;
 /* denote d in fx */
 static double dvn;
 /* standard deviation of Guassian distribution*/
-static fmpz_t bound;
+static fmpz_t bound, t;
 static fmpz_poly_t fx;
 /* for R = Z[x]/(x^d + 1); fx = x^d + 1 */
 sk_node_t *skhead;
 pk_node_t *pkhead;
+static long chrnd = 0;
+void set_mspace(long vt)
+{
+	fmpz_set_ui(t, vt);
+}
 
+long get_mspace()
+{
+	return fmpz_get_ui(t);
+}
 
 void bgv_set_d(long td)
 {
@@ -96,73 +107,6 @@ param_node_t *param_node_init(param_node_t *pnt)
 	return pnt;
 }
 
-fmpz *samplez(fmpz *vec)
-{
-	long ele = bgv_get_d();
-	if ( ele == 0 )
-		return;
-	double tdvn = bv_sym_get_dvn();
-	long a = (long)ceil(-10*tdvn);
-	long b = (long)floor(+10*tdvn);
-	long x, i;
-	double p;
-	int len = sizeof(unsigned long int);
-	mpz_t randseed;
-	mpz_init(randseed);
-	hcrypt_random(randseed, len);
-	unsigned long int useed = mpz_get_ui(randseed);
-	srand(useed);
-	for( i = 0 ; i < ele ; i++) {
-		do {
-			x = rand()%(b - a) + a;
-			p = exp(-pi*x / ( tdvn * tdvn));
-		} while ( !( p > 0 && p <= 1) );
-
-		vec[i] = x;
-	}
-	mpz_clear(randseed);
-	return vec;
-}
-
-void guassian_poly(fmpz *c, fmpz_poly_t poly)
-{
-	fmpz *tmp = samplez(c);
-	long k, ele = bgv_get_d();
-	for( k = 0 ; k < ele ; k++ ) {
-		fmpz_poly_set_coeff_si(poly, k, tmp[k]);
-	}
-}
-
-void unif_poly(fmpz_poly_t poly, fmpz_t space)
-{
-	int i;
-	int spacebit = fmpz_sizeinbase(space, 2);
-	int len = sizeof(unsigned long int);
-	fmpz_t randseed;
-	fmpz_init(randseed);
-	hcrypt_random(randseed, len);
-	unsigned long int useed = fmpz_get_ui(randseed);
-	mpz_t rndnum;
-	fmpz_t rndfmpz;
-	gmp_randstate_t gmpstate;
-
-	mpz_init(rndnum);
-	fmpz_init(rndfmpz);
-	gmp_randinit_default(gmpstate);
-	gmp_randseed_ui(gmpstate, useed);
-
-	long ele = bgv_get_d();
-	for( i = 0 ; i < ele ; i++ ) {
-		mpz_urandomb(rndnum, gmpstate, spacebit);
-		fmpz_set_mpz(rndfmpz, rndnum);
-		fmpz_poly_set_coeff_fmpz(poly, i, rndfmpz);
-	}
-	fmpz_clear(randseed);
-	fmpz_clear(rndfmpz);
-	gmp_randclear(gmpstate);
-	mpz_clear(rndnum);
-}
-
 void hcrypt_random(fmpz_t r, int len) {
 	mpz_t tmp;
 	FILE *fp;
@@ -201,6 +145,75 @@ void hcrypt_random(fmpz_t r, int len) {
 	mpz_clear(tmp);
 }
 
+fmpz *samplez(fmpz *vec)
+{
+	long ele = bgv_get_d();
+	if ( ele == 0 )
+		return;
+	double tdvn = bgv_get_dvn();
+	long a = (long)ceil(-10*tdvn);
+	long b = (long)floor(+10*tdvn);
+	long x, i;
+	double p;
+	int len = sizeof(unsigned long int);
+	fmpz_t randseed;
+	fmpz_init(randseed);
+	hcrypt_random(randseed, len);
+	unsigned long int useed = fmpz_get_ui(randseed);
+	srand(useed);
+	for( i = 0 ; i < ele ; i++) {
+		do {
+			x = rand()%(b - a) + a;
+			p = exp(-pi*x / ( tdvn * tdvn));
+		} while ( !( p > 0 && p <= 1) );
+
+		vec[i] = x;
+	}
+	fmpz_clear(randseed);
+	return vec;
+}
+
+void guassian_poly(fmpz *c, fmpz_poly_t poly)
+{
+	fmpz *tmp = samplez(c);
+	long k, ele = bgv_get_d();
+	for( k = 0 ; k < ele ; k++ ) {
+		fmpz_poly_set_coeff_si(poly, k, tmp[k]);
+	}
+}
+
+void unif_poly(fmpz_poly_t poly, fmpz_t space)
+{
+	int i;
+	int len = sizeof(unsigned long int);
+	fmpz_t randseed;
+	fmpz_init(randseed);
+	hcrypt_random(randseed, len);
+	unsigned long int useed = fmpz_get_ui(randseed);
+	mpz_t rndnum, rndbd;
+	fmpz_t rndfmpz;
+	gmp_randstate_t gmpstate;
+
+	mpz_init(rndnum);
+	mpz_init(rndbd);
+	fmpz_get_mpz(rndbd, space);
+	fmpz_init(rndfmpz);
+	gmp_randinit_default(gmpstate);
+	gmp_randseed_ui(gmpstate, useed);
+
+	long ele = bgv_get_d();
+	for( i = 0 ; i < ele ; i++ ) {
+		mpz_urandomm(rndnum, gmpstate, rndbd);
+		fmpz_set_mpz(rndfmpz, rndnum);
+		fmpz_poly_set_coeff_fmpz(poly, i, rndfmpz);
+	}
+	fmpz_clear(randseed);
+	fmpz_clear(rndfmpz);
+	gmp_randclear(gmpstate);
+	mpz_clear(rndnum);
+	mpz_clear(rndbd);
+}
+
 param_node_t *e_setup(int miu, int lamda, int b, param_node_t *param)
 {
 	hcrypt_random(param->q, miu);
@@ -208,7 +221,7 @@ param_node_t *e_setup(int miu, int lamda, int b, param_node_t *param)
 	fmpz_init(tmp);
 	fmpz_fdiv_q(tmp, param->q, bound);
 	long prod;
-	prod = lamda * fmpz_flog_ui(tmp, 2);
+	prod = lamda * fmpz_flog(tmp, t);
 
 	if(b == 0) {
 		d = 1;
@@ -243,9 +256,9 @@ sk_node_t *e_skeygen(param_node_t *param)
         return sknode;
 }
 
-fmpz_poly_mat_t e_pkeygen(param_node_t *param, sk_node_t *sknode)
+void e_pkeygen(fmpz_poly_mat_t pk, param_node_t *param, sk_node_t *sknode)
 {
-        fmpz_poly_mat_t pk, ppk, ee, bb, ss, tmp, tmp1;
+        fmpz_poly_mat_t ppk, ee, bb, ss, tmp, tmp1;
         fmpz_poly_mat_init(ppk, param->bign, param->n);
         fmpz_poly_mat_init(pk, param->bign, 1 + (param->n));
         fmpz_poly_mat_init(ee, param->bign, 1);
@@ -267,10 +280,8 @@ fmpz_poly_mat_t e_pkeygen(param_node_t *param, sk_node_t *sknode)
         }
         fmpz_poly_mat_init(tmp, param->bign, 1);
         fmpz_poly_mat_init(tmp1, param->bign, 1);
-        fmpz_poly_mat_mul(tmp, ppk, ss);
-        fmpz_t c;
-        fmpz_init_set_ui(c, 2);
-        fmpz_poly_mat_scalar_mul_fmpz(tmp1, ee, c)
+        fmpz_poly_mat_mul(tmp, ppk, ss);  
+        fmpz_poly_mat_scalar_mul_fmpz(tmp1, ee, t);
         fmpz_poly_mat_add(bb, tmp, tmp1);
         for( i = 0 ; i < param->bign ; i++ ) {
                 fmpz_poly_set(fmpz_poly_mat_entry(pk, i, 0), fmpz_poly_mat_entry(bb, i, 0));
@@ -283,10 +294,10 @@ fmpz_poly_mat_t e_pkeygen(param_node_t *param, sk_node_t *sknode)
         for( i = 0 ; i < param->bign ; i++) {
                 for( j = 0; j < param->n + 1 ; j++) {
                         fmpz_poly_rem_basecase(fmpz_poly_mat_entry(pk, i, j), fmpz_poly_mat_entry(pk, i, j), fx);
-                        fmpz_poly_scalar_smod_fmpz(fmpz_poly_mat_entry(pk, i, j), fmpz_poly_mat_entry(pk, i, j), q);
+                        fmpz_poly_scalar_smod_fmpz(fmpz_poly_mat_entry(pk, i, j), fmpz_poly_mat_entry(pk, i, j), param->q);
                 }
         }
-        fmpz_clear(c);
+
         _fmpz_vec_clear(coeffs, d);
         fmpz_poly_mat_clear(tmp);
         fmpz_poly_mat_clear(tmp1);
@@ -294,13 +305,12 @@ fmpz_poly_mat_t e_pkeygen(param_node_t *param, sk_node_t *sknode)
         fmpz_poly_mat_clear(ss);
         fmpz_poly_mat_clear(bb);
         fmpz_poly_mat_clear(ppk);
-        return pk;
 }
 
-fmpz_poly_mat_t e_encrypt(param_node_t *param, fmpz_poly_mat_t pk, fmpz_poly_t ms)
+void e_encrypt(fmpz_poly_mat_t ct, param_node_t *param, fmpz_poly_mat_t pk, fmpz_poly_t ms)
 {
         long i, j;
-        fmpz_poly_mat_t mm, rr, ct, tmp, tmp1;
+        fmpz_poly_mat_t mm, rr, tmp, tmp1;
         fmpz_poly_mat_init(mm, 1 + param->n, 1);
         fmpz_poly_mat_init(rr, param->bign, 1);
         fmpz_poly_mat_init(ct, 1 + param->n, 1);
@@ -322,19 +332,18 @@ fmpz_poly_mat_t e_encrypt(param_node_t *param, fmpz_poly_mat_t pk, fmpz_poly_t m
 
         for( i = 0; i < param->n + 1 ; i++) {
                 fmpz_poly_rem_basecase(fmpz_poly_mat_entry(ct, i, 0), fmpz_poly_mat_entry(ct, i, 0), fx);
-                fmpz_poly_scalar_smod_fmpz(fmpz_poly_mat_entry(ct, i, 0), fmpz_poly_mat_entry(ct, i, 0), q);
+                fmpz_poly_scalar_smod_fmpz(fmpz_poly_mat_entry(ct, i, 0), fmpz_poly_mat_entry(ct, i, 0), param->q);
         }
 
         fmpz_poly_mat_clear(tmp);
         fmpz_poly_mat_clear(tmp1);
         fmpz_poly_mat_clear(mm);
         fmpz_poly_mat_clear(rr);
-        return ct;
 }
 
-fmpz_poly_t e_decrypt(param_node_t *param, fmpz_poly_mat_t sk, fmpz_poly_mat_t ct)
+void e_decrypt(fmpz_poly_t ms, param_node_t *param, fmpz_poly_mat_t sk, fmpz_poly_mat_t ct)
 {
-        fmpz_poly_t ms, tmp;
+        fmpz_poly_t tmp;
         fmpz_poly_init(ms);
         fmpz_poly_init(tmp);
         fmpz_poly_zero(ms);
@@ -345,17 +354,73 @@ fmpz_poly_t e_decrypt(param_node_t *param, fmpz_poly_mat_t sk, fmpz_poly_mat_t c
                 fmpz_poly_add(ms, ms, tmp);
         }
         fmpz_poly_rem_basecase(ms, ms, fx);
-        fmpz_poly_scalar_smod_fmpz(ms, ms, q);
+        fmpz_poly_scalar_smod_fmpz(ms, ms, param->q);
         fmpz_poly_scalar_smod_fmpz(ms, ms, t);
 
         fmpz_poly_clear(tmp);
-        return ms;
 }
-fmpz_poly_mat_t bitdecomp(fmpz_poly_mat_t x, fmpz_t qq)
+
+void bitdecomp(fmpz_poly_mat_t dc, fmpz_poly_mat_t x, fmpz_t qq)
 {
+	long xrow = fmpz_poly_mat_nrows(x);
+	long len = fmpz_clog(qq, t);
+	long qrow = xrow * len;
+	long i, j, k;
+	fmpz_poly_mat_init(dc, qrow, 1);
+	fmpz_mat_t bits;
+	fmpz_mat_init(bits, d, len);
+	fmpz_t hold;
+	fmpz_init(hold);
+	fmpz_poly_t xtmp;
+	fmpz_poly_init(xtmp);
+	for( i = 0 ; i < xrow ; i++ ) {
+		fmpz_mat_zero(bits);
+		for( j = 0 ; j < d ; j++) {
+			fmpz_poly_get_coeff_fmpz(hold, fmpz_poly_mat_entry(x, i, 0), j);
+			k = 0;
+			while ( !fmpz_is_zero(hold) ) {
+				fmpz_mod(fmpz_mat_entry(bits, j, k), hold, t);
+				fmpz_tdiv_q(hold, hold, t);
+				k++;
+			}
+		}
 
+		for( j = 0 ; j < len ; j++ ) {
+			fmpz_poly_zero(xtmp);
+			for( k = 0; k < d ; k++ ) {
+				fmpz_poly_set_coeff_fmpz(xtmp, k, fmpz_mat_entry(bits, k, j));
+			}
+			fmpz_poly_set(fmpz_poly_mat_entry(dc, i + j * xrow, 0), xtmp);
+		}
+	}
+	
+	fmpz_clear(hold);
+	fmpz_poly_clear(xtmp);
+	fmpz_mat_clear(bits);
 }
 
+
+int main()
+{
+	fmpz_poly_mat_t x,dc;
+	fmpz_t qq;
+	fmpz_init(qq);
+	fmpz_set_ui(qq, 8);
+	set_mspace(2);
+	bgv_set_d(4);
+	fmpz_poly_mat_init(x, 2, 1);
+	fmpz_poly_set_str(fmpz_poly_mat_entry(x,0,0),"4  0 1 2 7");
+	fmpz_poly_set_str(fmpz_poly_mat_entry(x,1,0),"4  1 3 0 5");
+	bitdecomp(dc,x,qq);
+	
+	fmpz_poly_mat_print(dc, "x");
+	printf("\n");
+	
+	fmpz_clear(qq);
+	fmpz_poly_mat_clear(x);
+	fmpz_poly_mat_clear(dc);
+	return 0;
+}
 
 
 

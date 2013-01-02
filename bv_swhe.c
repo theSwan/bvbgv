@@ -341,6 +341,7 @@ void bv_swhe_mul(fmpz_poly_t c10, fmpz_poly_t c11, fmpz_poly_t c20, fmpz_poly_t 
 	fmpz_init(hold);
 	fmpz_mat_t bits;
 	fmpz_mat_init(bits, fmpz_poly_length(tmp2), len);
+	fmpz_mat_zero(bits);
 	for ( i = 0 ; i < fmpz_poly_length(tmp2) ; ++i ) {
 		fmpz_poly_get_coeff_fmpz(hold, tmp2, i);
 		j = 0;
