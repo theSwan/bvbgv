@@ -229,18 +229,20 @@ void bv_sym_unif_poly(fmpz_poly_t poly)
 	mpz_init(randseed);
 	hcrypt_random(randseed, len);
 	unsigned long int useed = mpz_get_ui(randseed);
-	mpz_t rndnum;
+	mpz_t rndnum,rndbd;
 	fmpz_t rndfmpz;
 	gmp_randstate_t gmpstate;
 
 	mpz_init(rndnum);
+	mpz_init(rndbd);
+	fmpz_get_mpz(rndbd, q);
 	fmpz_init(rndfmpz);
 	gmp_randinit_default(gmpstate);
 	gmp_randseed_ui(gmpstate, useed);
 
 	long n = bv_sym_get_n();
 	for( i = 0 ; i < n ; i++ ) {
-		mpz_urandomb(rndnum, gmpstate, qbit);
+		mpz_urandomm(rndnum, gmpstate, rndbd);
 		fmpz_set_mpz(rndfmpz, rndnum);
 		fmpz_poly_set_coeff_fmpz(poly, i, rndfmpz);
 	}
@@ -248,6 +250,7 @@ void bv_sym_unif_poly(fmpz_poly_t poly)
 	fmpz_clear(rndfmpz);
 	gmp_randclear(gmpstate);
 	mpz_clear(rndnum);
+	mpz_clear(rndbd);
 }
 
 void bv_sym_keygen(fmpz_poly_t sk)
