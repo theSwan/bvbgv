@@ -50,36 +50,36 @@ static int bgv_level;
 key_node_t *keylist;
 static long chrnd = 0;
 
-void set_mspace(long vt);
-long get_mspace();
-void bgv_set_d(long td);
-long bgv_get_d();
-void bgv_set_secparam(long sp);
-long bgv_get_secparam();
-void bgv_set_dvn(double tdvn);
-double bgv_get_dvn();
-void bgv_set_bound(int vb);
-void bgv_vars_init();
-void bgv_vars_clear();
-void bgv_set_level(int l);
-int bgv_get_level();
-void hcrypt_random(fmpz_t r, int len);
-fmpz *samplez(fmpz *vec);
-void guassian_poly(fmpz *c, fmpz_poly_t poly);
-void unif_poly(fmpz_poly_t poly, fmpz_t space);
-param_node_t *param_node_init(param_node_t *pnt);
-param_node_t *e_setup(int miu, int lamda, int b, param_node_t *param);
-void e_skeygen(fmpz_poly_mat_t sk, param_node_t *param);
-void e_pkeygen(fmpz_poly_mat_t pk, param_node_t *param, fmpz_poly_mat_t sk);
-void e_encrypt(fmpz_poly_mat_t ct, param_node_t *param, fmpz_poly_mat_t pk, fmpz_poly_t ms);
-void e_decrypt(fmpz_poly_t ms, param_node_t *param, fmpz_poly_mat_t sk, fmpz_poly_mat_t ct);
-void bitdecomp(fmpz_poly_mat_t dc, fmpz_poly_mat_t x, fmpz_t qq);
+void set_mspace(long vt);//
+long get_mspace();//
+void bgv_set_d(long td);//
+long bgv_get_d();//
+void bgv_set_secparam(long sp);//
+long bgv_get_secparam();//
+void bgv_set_dvn(double tdvn);//
+double bgv_get_dvn();//
+void bgv_set_bound(int vb);//
+void bgv_vars_init();//
+void bgv_vars_clear();//
+void bgv_set_level(int l);//
+int bgv_get_level();//
+void hcrypt_random(fmpz_t r, int len);//
+fmpz *samplez(fmpz *vec);//
+void guassian_poly(fmpz *c, fmpz_poly_t poly);//
+void unif_poly(fmpz_poly_t poly, fmpz_t space);//
+param_node_t *param_node_init(param_node_t *pnt);//
+param_node_t *e_setup(int miu, int lamda, int b, param_node_t *param);//
+void e_skeygen(fmpz_poly_mat_t sk, param_node_t *param);//
+void e_pkeygen(fmpz_poly_mat_t pk, param_node_t *param, fmpz_poly_mat_t sk);//
+void e_encrypt(fmpz_poly_mat_t ct, param_node_t *param, fmpz_poly_mat_t pk, fmpz_poly_t ms);//
+void e_decrypt(fmpz_poly_t ms, param_node_t *param, fmpz_poly_mat_t sk, fmpz_poly_mat_t ct);//
+void bitdecomp(fmpz_poly_mat_t dc, fmpz_poly_mat_t x, fmpz_t qq);//
 void powers(fmpz_poly_mat_t po, fmpz_poly_mat_t x, fmpz_t qq);
 void switchkeygen(fmpz_poly_mat_t mapb, fmpz_poly_mat_t s1, fmpz_poly_mat_t s2, fmpz_t qq);
 void switchkey(fmpz_poly_mat_t c2, fmpz_poly_mat_t mapb, fmpz_poly_mat_t c1, fmpz_t qq);
 void scale(fmpz_poly_mat_t c2, fmpz_poly_mat_t c1, fmpz_t qq, fmpz_t pp, fmpz_t r);
 void hcrypt_bgv_refresh(fmpz_poly_mat_t c3, fmpz_poly_mat_t c, fmpz_poly_mat_t map, fmpz_t qq, fmpz_t pp, fmpz_t r);
-param_node_t *hcrypt_bgv_setup(int lamda, int level, int b, param_node_t *param);
+param_node_t *hcrypt_bgv_setup(int lamda, int level, int b, param_node_t *param);//
 void vec_tensor(fmpz_poly_mat_t tensor, fmpz_poly_mat_t x);
 key_node_t *hcrypt_bgv_keygen(key_node_t *kn, param_node_t *param);
 ciphertext_t *hcrypt_bgv_encrypt(ciphertext_t *ct, param_node_t *param, fmpz_poly_mat_t pk, fmpz_poly_t ms);
@@ -90,6 +90,7 @@ ciphertext_t *hcrypt_bgv_add(ciphertext_t *c, pk_node_t *pbk, ciphertext_t *c1, 
 {
         c = (ciphertext_t *)malloc(sizeof(ciphertext_t));
         c->lv = c1->lv;
+	
 }
 
 void hcrypt_bgv_decrypt(fmpz_poly_t ms, param_node_t *param, fmpz_poly_mat_t sk, fmpz_poly_mat_t ct)
@@ -101,15 +102,18 @@ ciphertext_t *hcrypt_bgv_encrypt(ciphertext_t *ct, param_node_t *param, fmpz_pol
 {
         ct = (ciphertext_t *)malloc(sizeof(ciphertext_t));
         ct->lv = bgv_get_level();
-        e_encrypt(ct->text, param, keylist->pka, ms);
+        e_encrypt(ct->text, param, keylist->pubkey->pka, ms);
         return ct;
 }
 
 key_node_t *hcrypt_bgv_keygen(key_node_t *kn, param_node_t *param)
 {
+	printf("keygen start\n");
         kn = (key_node_t *)malloc(sizeof(key_node_t));
 	sk_node_t *sh, *ss, *sr;
 	pk_node_t *ph, *ps, *pr;
+	sh = (sk_node_t *)malloc(sizeof(sk_node_t));
+	ph = (pk_node_t *)malloc(sizeof(pk_node_t));
         e_skeygen(sh->sk, param);
         e_pkeygen(ph->pka, param, sh->sk);
         fmpz_poly_mat_t tensor, s1, s2;
@@ -118,13 +122,14 @@ key_node_t *hcrypt_bgv_keygen(key_node_t *kn, param_node_t *param)
         fmpz_poly_mat_zero(ph->pkb);
         fmpz_poly_mat_clear(tensor);
         param_node_t *pam;
-
+	
         ss = sh;
 	ps = ph;
         int l = bgv_get_level() - 1;
         int i;
         pam = param->next;
         for(i = l ; i >= 0 ; i-- ){
+		printf("i%d\n", i);
                 sr = (sk_node_t *)malloc(sizeof(sk_node_t));
 		pr = (pk_node_t *)malloc(sizeof(pk_node_t));
                 e_skeygen(sr->sk, pam);
@@ -711,37 +716,13 @@ int main()
         bgv_set_bound(16);
         bgv_set_dvn(8.0);
         set_mspace(2);
-	param_node_t *p, *r;
+	param_node_t *p;
 	
-	p = hcrypt_bgv_setup(8, 8, 1, p);
-
-	while(p->next!=NULL)
-	{
-		r=p;
-		p=p->next;
-	}
-	fmpz_poly_mat_t sk,pk,ct;
-	fmpz_poly_t ms,m;
-	fmpz_poly_init(ms);
-	fmpz_poly_init(m);
-	fmpz_poly_set_coeff_si(ms, 5, 1);
-	fmpz_poly_set_coeff_si(ms, 1, 1);
-	e_skeygen(sk, r);
-	//fmpz_poly_mat_print(sk,"x");
-	e_pkeygen(pk,r,sk);
-	//fmpz_poly_mat_print(pk,"x");
-	e_encrypt(ct,r,pk,ms);
-	fmpz_poly_mat_print(ct,"x");
-	e_decrypt(m,r,sk,ct);
-	fmpz_poly_print(m);
-	printf("\n");
-	fmpz_print(r->q);
-	printf("\n");
-	fmpz_poly_clear(m);
-	fmpz_poly_clear(ms);
-	fmpz_poly_mat_clear(sk);
-	fmpz_poly_mat_clear(pk);
-	fmpz_poly_mat_clear(ct);
+	p = hcrypt_bgv_setup(2, 3, 1, p);
+	printf("setup ok\n");
+	keylist =  hcrypt_bgv_keygen(keylist, p);
+	fmpz_poly_mat_print(keylist->pubkey->pka,"x");
+	
 	bgv_vars_clear();
 	return 0;
 }
