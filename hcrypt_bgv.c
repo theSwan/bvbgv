@@ -10,16 +10,21 @@
 #include "flint/fmpz.h"
 #include "flint/fmpz_mat.h"
 
+typedef struct pk_node_t {
+	fmpz_poly_mat_t pka;
+	fmpz_poly_mat_t pkb;
+	struct pk_node_t *next;
+}pk_node_t ;
+
 typedef struct sk_node_t {
 	fmpz_poly_mat_t sk;
 	struct sk_node_t *next;
 }sk_node_t;
 
-typedef struct pk_node_t {
-	fmpz_poly_mat_t a;
-	fmpz_poly_mat_t b;
-	struct pk_node_t *next;
-}pk_node_t;
+typedef struct key_node_t {
+	pk_node_t *pubkey;
+	sk_node_t *prvkey;
+}key_node_t;
 
 typedef struct param_node_t {
 	fmpz_t q;
@@ -28,6 +33,11 @@ typedef struct param_node_t {
 	struct param_node_t *next;
 }param_node_t;
 
+typedef struct ciphertext_t {
+        fmpz_poly_mat_t text;
+        int lv;
+}ciphertext_t;
+
 const double pi = 3.1415926;
 static long secparam, d;
 /* denote d in fx */
@@ -35,9 +45,9 @@ static double dvn;
 /* standard deviation of Guassian distribution*/
 static fmpz_t bound, t;
 static fmpz_poly_t fx;
+static int bgv_level;
 /* for R = Z[x]/(x^d + 1); fx = x^d + 1 */
-sk_node_t *skhead;
-pk_node_t *pkhead;
+key_node_t *keylist;
 static long chrnd = 0;
 
 void set_mspace(long vt);
@@ -49,14 +59,17 @@ long bgv_get_secparam();
 void bgv_set_dvn(double tdvn);
 double bgv_get_dvn();
 void bgv_set_bound(int vb);
-void bv_sym_vars_init();
-void bv_sym_vars_clear();
+void bgv_vars_init();
+void bgv_vars_clear();
+void bgv_set_level(int l);
+int bgv_get_level();
 void hcrypt_random(fmpz_t r, int len);
 fmpz *samplez(fmpz *vec);
 void guassian_poly(fmpz *c, fmpz_poly_t poly);
 void unif_poly(fmpz_poly_t poly, fmpz_t space);
+param_node_t *param_node_init(param_node_t *pnt);
 param_node_t *e_setup(int miu, int lamda, int b, param_node_t *param);
-sk_node_t *e_skeygen(param_node_t *param);
+void e_skeygen(fmpz_poly_mat_t sk, param_node_t *param);
 void e_pkeygen(fmpz_poly_mat_t pk, param_node_t *param, fmpz_poly_mat_t sk);
 void e_encrypt(fmpz_poly_mat_t ct, param_node_t *param, fmpz_poly_mat_t pk, fmpz_poly_t ms);
 void e_decrypt(fmpz_poly_t ms, param_node_t *param, fmpz_poly_mat_t sk, fmpz_poly_mat_t ct);
@@ -64,6 +77,191 @@ void bitdecomp(fmpz_poly_mat_t dc, fmpz_poly_mat_t x, fmpz_t qq);
 void powers(fmpz_poly_mat_t po, fmpz_poly_mat_t x, fmpz_t qq);
 void switchkeygen(fmpz_poly_mat_t mapb, fmpz_poly_mat_t s1, fmpz_poly_mat_t s2, fmpz_t qq);
 void switchkey(fmpz_poly_mat_t c2, fmpz_poly_mat_t mapb, fmpz_poly_mat_t c1, fmpz_t qq);
+void scale(fmpz_poly_mat_t c2, fmpz_poly_mat_t c1, fmpz_t qq, fmpz_t pp, fmpz_t r);
+void hcrypt_bgv_refresh(fmpz_poly_mat_t c3, fmpz_poly_mat_t c, fmpz_poly_mat_t map, fmpz_t qq, fmpz_t pp, fmpz_t r);
+param_node_t *hcrypt_bgv_setup(int lamda, int level, int b, param_node_t *param);
+void vec_tensor(fmpz_poly_mat_t tensor, fmpz_poly_mat_t x);
+key_node_t *hcrypt_bgv_keygen(key_node_t *kn, param_node_t *param);
+ciphertext_t *hcrypt_bgv_encrypt(ciphertext_t *ct, param_node_t *param, fmpz_poly_mat_t pk, fmpz_poly_t ms);
+void hcrypt_bgv_decrypt(fmpz_poly_t ms, param_node_t *param, fmpz_poly_mat_t sk, fmpz_poly_mat_t ct);
+ciphertext_t *hcrypt_bgv_add(ciphertext_t *c, pk_node_t *pbk, ciphertext_t *c1, ciphertext_t *c2);
+
+ciphertext_t *hcrypt_bgv_add(ciphertext_t *c, pk_node_t *pbk, ciphertext_t *c1, ciphertext_t *c2)
+{
+        c = (ciphertext_t *)malloc(sizeof(ciphertext_t));
+        c->lv = c1->lv;
+}
+
+void hcrypt_bgv_decrypt(fmpz_poly_t ms, param_node_t *param, fmpz_poly_mat_t sk, fmpz_poly_mat_t ct)
+{
+        e_decrypt(ms, param, sk, ct);
+}
+
+ciphertext_t *hcrypt_bgv_encrypt(ciphertext_t *ct, param_node_t *param, fmpz_poly_mat_t pk, fmpz_poly_t ms)
+{
+        ct = (ciphertext_t *)malloc(sizeof(ciphertext_t));
+        ct->lv = bgv_get_level();
+        e_encrypt(ct->text, param, keylist->pka, ms);
+        return ct;
+}
+
+key_node_t *hcrypt_bgv_keygen(key_node_t *kn, param_node_t *param)
+{
+        kn = (key_node_t *)malloc(sizeof(key_node_t));
+	sk_node_t *sh, *ss, *sr;
+	pk_node_t *ph, *ps, *pr;
+        e_skeygen(sh->sk, param);
+        e_pkeygen(ph->pka, param, sh->sk);
+        fmpz_poly_mat_t tensor, s1, s2;
+        vec_tensor(tensor, sh->sk);
+        bitdecomp(s1, tensor, param->q);
+        fmpz_poly_mat_zero(ph->pkb);
+        fmpz_poly_mat_clear(tensor);
+        param_node_t *pam;
+
+        ss = sh;
+	ps = ph;
+        int l = bgv_get_level() - 1;
+        int i;
+        pam = param->next;
+        for(i = l ; i >= 0 ; i-- ){
+                sr = (sk_node_t *)malloc(sizeof(sk_node_t));
+		pr = (pk_node_t *)malloc(sizeof(pk_node_t));
+                e_skeygen(sr->sk, pam);
+                e_pkeygen(pr->pka, pam, sr->sk);
+                vec_tensor(tensor, sr->sk);
+                bitdecomp(s2, tensor, pam->q);
+                switchkeygen(pr->pkb, s1, sr->sk, pam->q);
+                fmpz_poly_mat_set(s1, s2);
+                fmpz_poly_mat_clear(s2);
+                fmpz_poly_mat_clear(tensor);
+                pam = pam->next;
+                ss->next = sr;
+                ss = sr;
+		ps->next = pr;
+		ps = pr;
+        }
+        ss->next = NULL;
+	ps->next = NULL;
+	kn->prvkey = sh;
+	kn->pubkey = ph;
+        fmpz_poly_mat_clear(s1);
+        return kn;
+}
+
+param_node_t *hcrypt_bgv_setup(int lamda, int level, int b, param_node_t *param)
+{
+        bgv_set_level(level);
+        int miu, tt;
+        tt = (int) get_mspace();
+        miu = log(lamda*level)/log(tt);
+        param = param_node_init(param);
+        int high;
+        high = (level + 1) * miu;
+        hcrypt_random(param->q, high);
+	fmpz_t tmp;
+	fmpz_init(tmp);
+	fmpz_fdiv_q(tmp, param->q, bound);
+	long prod;
+	prod = lamda * fmpz_flog(tmp, t);
+
+	if(b == 0) {
+		param->n = prod;
+		d = 1;
+	}
+	else {
+		param->n = 1;
+		d = prod;
+	}
+        param->bign = ceil((2 * param->n + 1) * fmpz_flog(param->q,t));
+        fmpz_poly_set_coeff_ui(fx, d, 1);
+	fmpz_poly_set_coeff_ui(fx, 0, 1);
+	param_node_t *r, *pn;
+
+        r = param;
+        int j;
+        for(j = level - 1 ; j >= 0 ; j--) {
+                pn = e_setup((j+1)*miu, lamda, b, pn);
+                r->next = pn;
+                r = pn;
+        }
+        r->next = NULL;
+
+        fmpz_clear(tmp);
+        return param;
+}
+
+void hcrypt_bgv_refresh(fmpz_poly_mat_t c3, fmpz_poly_mat_t c, fmpz_poly_mat_t map, fmpz_t qq, fmpz_t pp, fmpz_t r)
+{
+        fmpz_poly_mat_t c1;
+        powers(c1, c, qq);
+        fmpz_poly_mat_t c2;
+        scale(c2, c1, qq, pp, r);
+        switchkey(c3, map, c2, pp);
+}
+
+void scale(fmpz_poly_mat_t c2, fmpz_poly_mat_t c1, fmpz_t qq, fmpz_t pp, fmpz_t r)
+{
+        long row, col, i, j, len, k;
+        row = fmpz_poly_mat_nrows(c1);
+        col = fmpz_poly_mat_ncols(c1);
+        fmpz_poly_mat_init(c1, row, col);
+        fmpz_poly_t poly;
+        fmpz_poly_init(poly);
+        fmpz_t coeff, tmp, tmp1, tmp2, tmp3, tmp4, tmp5, tmp6, tmp7, tmp8, tmp9;
+        fmpz_init(coeff);
+        fmpz_init(tmp);
+        fmpz_init(tmp1);
+        fmpz_init(tmp2);
+        fmpz_init(tmp3);
+        fmpz_init(tmp4);
+        fmpz_init(tmp5);
+        fmpz_init(tmp6);
+        fmpz_init(tmp7);
+        fmpz_init(tmp8);
+        fmpz_init(tmp9);
+        fmpz_cdiv_q(coeff, pp, qq);
+        for( i = 0 ; i < row ; i++ ) {
+                for( j = 0 ; j < col ; j++ ) {
+                        fmpz_poly_set(poly, fmpz_poly_mat_entry(c1, i, j));
+                        len = fmpz_poly_length(poly);
+                        for( k = 0 ; k < len ; k++ ) {
+                                fmpz_poly_get_coeff_fmpz(tmp, poly, k);
+                                fmpz_mod(tmp1, tmp, r);   /* tmp1 = base */
+                                fmpz_mul(tmp2, tmp, coeff);  /* tmp2 = bound */
+                                fmpz_sub(tmp3, tmp2, tmp1);
+                                fmpz_fdiv_q(tmp4, tmp3, r);   /* tmp4 = ( bound - base ) / r = h */
+                                fmpz_mul(tmp5, tmp4, r);
+                                fmpz_add(tmp6, tmp5, tmp1);
+                                fmpz_sub(tmp7, tmp2, tmp6);  /* tmp7 = bound - ( h * r + base ) */
+                                fmpz_add(tmp3, tmp6, r);
+                                if(fmpz_cmp(tmp3, pp) < 0) {
+                                        fmpz_sub(tmp8, tmp3, tmp2);
+                                        if(fmpz_cmp(tmp8, tmp7) < 0) {
+                                        fmpz_set(tmp9, tmp3);
+                                        }
+                                }
+                                else {
+                                        fmpz_set(tmp9, tmp6);
+                                }
+                                fmpz_poly_set_coeff_fmpz(poly, k, tmp9);
+                        }
+                        fmpz_poly_set(fmpz_poly_mat_entry(c2, i, j), poly);
+                }
+        }
+        fmpz_poly_clear(poly);
+        fmpz_clear(coeff);
+        fmpz_clear(tmp);
+        fmpz_clear(tmp1);
+        fmpz_clear(tmp2);
+        fmpz_clear(tmp3);
+        fmpz_clear(tmp4);
+        fmpz_clear(tmp5);
+        fmpz_clear(tmp6);
+        fmpz_clear(tmp7);
+        fmpz_clear(tmp8);
+        fmpz_clear(tmp9);
+}
 
 void switchkey(fmpz_poly_mat_t c2, fmpz_poly_mat_t mapb, fmpz_poly_mat_t c1, fmpz_t qq)
 {
@@ -81,6 +279,8 @@ void switchkey(fmpz_poly_mat_t c2, fmpz_poly_mat_t mapb, fmpz_poly_mat_t c1, fmp
 		}
 	}
 	fmpz_poly_mat_mul(c2, bdt, mapb);
+	fmpz_poly_mat_clear(bd);
+	fmpz_poly_mat_clear(bdt);
 }
 
 void switchkeygen(fmpz_poly_mat_t mapb, fmpz_poly_mat_t s1, fmpz_poly_mat_t s2, fmpz_t qq)
@@ -90,7 +290,7 @@ void switchkeygen(fmpz_poly_mat_t mapb, fmpz_poly_mat_t s1, fmpz_poly_mat_t s2, 
 	param = (param_node_t *)malloc(sizeof(param_node_t));
 	long n1, n2, i;
 	n1 = fmpz_poly_mat_nrows(s1);
-	n2 = fmpz_poly_mat_nrows(s2)
+	n2 = fmpz_poly_mat_nrows(s2);
 	param->n = n2 - 1;
 	param->bign = n1 * fmpz_clog(qq, t);
 	fmpz_init_set(param->q, qq);
@@ -99,7 +299,7 @@ void switchkeygen(fmpz_poly_mat_t mapb, fmpz_poly_mat_t s1, fmpz_poly_mat_t s2, 
 	powers(sp1, s1, qq);
 	for( i = 0 ; i < param->bign ; i++) {
 		fmpz_poly_add(fmpz_poly_mat_entry(mapb, i, 0), fmpz_poly_mat_entry(mapb, i, 0), fmpz_poly_mat_entry(sp1, i, 0));
-	}	
+	}
 	fmpz_poly_mat_clear(sp1);
 	free(param);
 }
@@ -122,6 +322,29 @@ void bgv_set_d(long td)
 long bgv_get_d()
 {
 	return d;
+}
+
+void vec_tensor(fmpz_poly_mat_t tensor, fmpz_poly_mat_t x)
+{
+        long row1 = fmpz_poly_mat_nrows(x), row2;
+        row2 = row1 * row1;
+        fmpz_poly_mat_init(tensor, row2, 1);
+        long i, j;
+        for( i = 0 ; i < row1 ; i++ ) {
+                for( j = 0 ; j < row1 ; j++ ){
+                        fmpz_poly_mul(fmpz_poly_mat_entry(tensor,j+i*row1,0),fmpz_poly_mat_entry(x,i,0),fmpz_poly_mat_entry(x,j,0));
+                }
+        }
+}
+
+void bgv_set_level(int l)
+{
+        bgv_level = l;
+}
+
+int bgv_get_level()
+{
+        return bgv_level;
 }
 
 void bgv_set_secparam(long sp)
@@ -149,14 +372,14 @@ void bgv_set_bound(int vb)
 	fmpz_set_ui(bound, vb);
 }
 
-void bv_sym_vars_init()
+void bgv_vars_init()
 {
 	fmpz_init(bound);
 	fmpz_init(t);
 	fmpz_poly_init(fx);
 }
 
-void bv_sym_vars_clear()
+void bgv_vars_clear()
 {
 	fmpz_clear(bound);
 	fmpz_clear(t);
@@ -282,6 +505,7 @@ void unif_poly(fmpz_poly_t poly, fmpz_t space)
 
 param_node_t *e_setup(int miu, int lamda, int b, param_node_t *param)
 {
+        param = param_node_init(param);
 	hcrypt_random(param->q, miu);
 	fmpz_t tmp;
 	fmpz_init(tmp);
@@ -290,36 +514,32 @@ param_node_t *e_setup(int miu, int lamda, int b, param_node_t *param)
 	prod = lamda * fmpz_flog(tmp, t);
 
 	if(b == 0) {
-		d = 1;
 		param->n = prod;
 	}  /* LWE */
 	else {
 		param->n = 1;
-		d = prod;
 	} /* RLWE */
 
-	param->bign = ceil((2 * param->n + 1) * fmpz_flog_ui(param->q,2));
+	param->bign = ceil((2 * param->n + 1) * fmpz_flog(param->q,t));
+
+	fmpz_clear(tmp);
 	return param;
 }
 
-sk_node_t *e_skeygen(param_node_t *param)
+void e_skeygen(fmpz_poly_mat_t sk, param_node_t *param)
 {
-        sk_node_t *sknode;
-        sknode = (sk_node_t *)malloc(sizeof(sk_node_t));
-        fmpz_poly_mat_init(sknode->sk, 1 + param->n , 1);
-        sknode->next = NULL;
+        fmpz_poly_mat_init(sk, 1 + param->n , 1);
         fmpz *coeffs = _fmpz_vec_init(d);
         fmpz_poly_t poly;
         fmpz_poly_init(poly);
         fmpz_poly_set_coeff_si(poly, 0, 1);
-        fmpz_poly_set(fmpz_poly_mat_entry(sknode->sk, 0, 0), poly);
+        fmpz_poly_set(fmpz_poly_mat_entry(sk, 0, 0), poly);
         long i;
         for( i = 1 ; i <= param->n ; i++ ) {
-                guassian_poly(coeffs, fmpz_poly_mat_entry(sknode->sk, i, 0));
+                guassian_poly(coeffs, fmpz_poly_mat_entry(sk, i, 0));
         }
         _fmpz_vec_clear(coeffs, d);
         fmpz_poly_clear(poly);
-        return sknode;
 }
 
 void e_pkeygen(fmpz_poly_mat_t pk, param_node_t *param, fmpz_poly_mat_t sk)
@@ -346,7 +566,7 @@ void e_pkeygen(fmpz_poly_mat_t pk, param_node_t *param, fmpz_poly_mat_t sk)
         }
         fmpz_poly_mat_init(tmp, param->bign, 1);
         fmpz_poly_mat_init(tmp1, param->bign, 1);
-        fmpz_poly_mat_mul(tmp, ppk, ss);  
+        fmpz_poly_mat_mul(tmp, ppk, ss);
         fmpz_poly_mat_scalar_mul_fmpz(tmp1, ee, t);
         fmpz_poly_mat_add(bb, tmp, tmp1);
         for( i = 0 ; i < param->bign ; i++ ) {
@@ -394,7 +614,7 @@ void e_encrypt(fmpz_poly_mat_t ct, param_node_t *param, fmpz_poly_mat_t pk, fmpz
                         unif_poly(fmpz_poly_mat_entry(rr, i, 0), t);
         }
         fmpz_poly_mat_mul(tmp, tmp1, rr);
-        fmpz_poly_mat_add(ct, mm, ct);
+        fmpz_poly_mat_add(ct, mm, tmp);
 
         for( i = 0; i < param->n + 1 ; i++) {
                 fmpz_poly_rem_basecase(fmpz_poly_mat_entry(ct, i, 0), fmpz_poly_mat_entry(ct, i, 0), fx);
@@ -459,7 +679,7 @@ void bitdecomp(fmpz_poly_mat_t dc, fmpz_poly_mat_t x, fmpz_t qq)
 			fmpz_poly_set(fmpz_poly_mat_entry(dc, i + j * xrow, 0), xtmp);
 		}
 	}
-	
+
 	fmpz_clear(hold);
 	fmpz_poly_clear(xtmp);
 	fmpz_mat_clear(bits);
@@ -487,23 +707,42 @@ void powers(fmpz_poly_mat_t po, fmpz_poly_mat_t x, fmpz_t qq)
 
 int main()
 {
-	fmpz_poly_mat_t x,dc;
-	fmpz_t qq;
-	fmpz_init(qq);
-	fmpz_set_ui(qq, 8);
-	set_mspace(2);
-	bgv_set_d(4);
-	fmpz_poly_mat_init(x, 2, 1);
-	fmpz_poly_set_str(fmpz_poly_mat_entry(x,0,0),"4  0 1 2 7");
-	fmpz_poly_set_str(fmpz_poly_mat_entry(x,1,0),"4  1 3 0 5");
-	bitdecomp(dc,x,qq);
+        bgv_vars_init();
+        bgv_set_bound(16);
+        bgv_set_dvn(8.0);
+        set_mspace(2);
+	param_node_t *p, *r;
 	
-	fmpz_poly_mat_print(dc, "x");
+	p = hcrypt_bgv_setup(8, 8, 1, p);
+
+	while(p->next!=NULL)
+	{
+		r=p;
+		p=p->next;
+	}
+	fmpz_poly_mat_t sk,pk,ct;
+	fmpz_poly_t ms,m;
+	fmpz_poly_init(ms);
+	fmpz_poly_init(m);
+	fmpz_poly_set_coeff_si(ms, 5, 1);
+	fmpz_poly_set_coeff_si(ms, 1, 1);
+	e_skeygen(sk, r);
+	//fmpz_poly_mat_print(sk,"x");
+	e_pkeygen(pk,r,sk);
+	//fmpz_poly_mat_print(pk,"x");
+	e_encrypt(ct,r,pk,ms);
+	fmpz_poly_mat_print(ct,"x");
+	e_decrypt(m,r,sk,ct);
+	fmpz_poly_print(m);
 	printf("\n");
-	
-	fmpz_clear(qq);
-	fmpz_poly_mat_clear(x);
-	fmpz_poly_mat_clear(dc);
+	fmpz_print(r->q);
+	printf("\n");
+	fmpz_poly_clear(m);
+	fmpz_poly_clear(ms);
+	fmpz_poly_mat_clear(sk);
+	fmpz_poly_mat_clear(pk);
+	fmpz_poly_mat_clear(ct);
+	bgv_vars_clear();
 	return 0;
 }
 
