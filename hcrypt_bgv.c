@@ -76,7 +76,7 @@ void e_pkeygen(fmpz_poly_mat_t pk, param_node_t *param, fmpz_poly_mat_t sk);//
 void e_encrypt(fmpz_poly_mat_t ct, param_node_t *param, fmpz_poly_mat_t pk, fmpz_poly_t ms);//
 void e_decrypt(fmpz_poly_t ms, param_node_t *param, fmpz_poly_mat_t sk, fmpz_poly_mat_t ct);//
 void bitdecomp(fmpz_poly_mat_t dc, fmpz_poly_mat_t x, fmpz_t qq);//
-void powers(fmpz_poly_mat_t po, fmpz_poly_mat_t x, fmpz_t qq);
+void powers(fmpz_poly_mat_t po, fmpz_poly_mat_t x, fmpz_t qq);//
 void switchkeygen(fmpz_poly_mat_t mapb, fmpz_poly_mat_t s1, fmpz_poly_mat_t s2, fmpz_t qq);
 void switchkey(fmpz_poly_mat_t c2, fmpz_poly_mat_t mapb, fmpz_poly_mat_t c1, fmpz_t qq);
 void scale(fmpz_poly_mat_t c2, fmpz_poly_mat_t c1, fmpz_t qq, fmpz_t pp, fmpz_t r);
@@ -129,6 +129,16 @@ int main()
 	fmpz_poly_init(mr);
 	fmpz_poly_set_coeff_si(ms, 3, 1);
 	fmpz_poly_set_coeff_si(ms, 1, 1);
+	fmpz_poly_mat_t a,b;
+	fmpz_poly_mat_init(a,2,1);
+	fmpz_poly_mat_init(b,2,1);
+	fmpz_poly_set_str(fmpz_poly_mat_entry(a,0,0),"2  2 1");
+	fmpz_poly_set_str(fmpz_poly_mat_entry(a,1,0),"2  2 1");
+	fmpz_t qq,pp;
+	fmpz_set_si(qq,3);
+	fmpz_set_si(pp,2);
+	scale(b, a, qq, pp, t);
+	fmpz_poly_mat_print(b, "x");
 	/*param_node_t *r;
 	param = param_node_init(param);
 	r = param;
@@ -149,8 +159,8 @@ int main()
 	ct = hcrypt_bgv_encrypt(ct, param, keylist->pubkey->pka, ms);
 	printf("ok");
 	hcrypt_bgv_add(nct, keylist->pubkey, ct, ct);
-	hcrypt_bgv_decrypt(mr, param, keylist->prvkey->next->sk, nct->text);*/
-	fmpz_poly_print(mr);
+	hcrypt_bgv_decrypt(mr, param, keylist->prvkey->next->sk, nct->text);
+	fmpz_poly_print(mr);*/
 	printf("\n");
 	bgv_vars_clear();
 	return 0;
@@ -303,7 +313,7 @@ void scale(fmpz_poly_mat_t c2, fmpz_poly_mat_t c1, fmpz_t qq, fmpz_t pp, fmpz_t 
         col = fmpz_poly_mat_ncols(c1);
         fmpz_poly_t poly;
         fmpz_poly_init(poly);
-        fmpz_t coeff, tmp, tmp1, tmp2, tmp3, tmp4, tmp5, tmp6, tmp7, tmp8, tmp9;
+        fmpz_t coeff, tmp, tmp1, tmp2, tmp3, tmp4, tmp5, tmp6;
         fmpz_init(coeff);
         fmpz_init(tmp);
         fmpz_init(tmp1);
@@ -312,10 +322,7 @@ void scale(fmpz_poly_mat_t c2, fmpz_poly_mat_t c1, fmpz_t qq, fmpz_t pp, fmpz_t 
         fmpz_init(tmp4);
         fmpz_init(tmp5);
         fmpz_init(tmp6);
-        fmpz_init(tmp7);
-        fmpz_init(tmp8);
-        fmpz_init(tmp9);
-        fmpz_cdiv_q(coeff, pp, qq);
+        
         for( i = 0 ; i < row ; i++ ) {
                 for( j = 0 ; j < col ; j++ ) {
                         fmpz_poly_set(poly, fmpz_poly_mat_entry(c1, i, j));
@@ -323,23 +330,17 @@ void scale(fmpz_poly_mat_t c2, fmpz_poly_mat_t c1, fmpz_t qq, fmpz_t pp, fmpz_t 
                         for( k = 0 ; k < len ; k++ ) {
                                 fmpz_poly_get_coeff_fmpz(tmp, poly, k);
                                 fmpz_mod(tmp1, tmp, r);   /* tmp1 = base */
-                                fmpz_mul(tmp2, tmp, coeff);  /* tmp2 = bound */
+                                fmpz_mul(coeff, tmp, pp);  /* tmp2 = bound */
+				fmpz_cdiv_q(tmp2, coeff, qq);
+				if(fmpz_cmp(tmp2, pp) > 0)
+				fmpz_set(tmp2, pp);
                                 fmpz_sub(tmp3, tmp2, tmp1);
                                 fmpz_fdiv_q(tmp4, tmp3, r);   /* tmp4 = ( bound - base ) / r = h */
                                 fmpz_mul(tmp5, tmp4, r);
                                 fmpz_add(tmp6, tmp5, tmp1);
-                                fmpz_sub(tmp7, tmp2, tmp6);  /* tmp7 = bound - ( h * r + base ) */
-                                fmpz_add(tmp3, tmp6, r);
-                                if(fmpz_cmp(tmp3, pp) < 0) {
-                                        fmpz_sub(tmp8, tmp3, tmp2);
-                                        if(fmpz_cmp(tmp8, tmp7) < 0) {
-                                        fmpz_set(tmp9, tmp3);
-                                        }
-                                }
-                                else {
-                                        fmpz_set(tmp9, tmp6);
-                                }
-                                fmpz_poly_set_coeff_fmpz(poly, k, tmp9);
+                              
+				fmpz_mod(tmp6, tmp6, pp);
+                                fmpz_poly_set_coeff_fmpz(poly, k, tmp6);
                         }
                         fmpz_poly_set(fmpz_poly_mat_entry(c2, i, j), poly);
                 }
@@ -353,9 +354,6 @@ void scale(fmpz_poly_mat_t c2, fmpz_poly_mat_t c1, fmpz_t qq, fmpz_t pp, fmpz_t 
         fmpz_clear(tmp4);
         fmpz_clear(tmp5);
         fmpz_clear(tmp6);
-        fmpz_clear(tmp7);
-        fmpz_clear(tmp8);
-        fmpz_clear(tmp9);
 }
 
 void switchkey(fmpz_poly_mat_t c2, fmpz_poly_mat_t mapb, fmpz_poly_mat_t c1, fmpz_t qq)
@@ -401,6 +399,8 @@ void switchkeygen(fmpz_poly_mat_t mapb, fmpz_poly_mat_t s1, fmpz_poly_mat_t s2, 
 	powers(sp1, s1, qq);
 	for( i = 0 ; i < param->bign ; i++) {
 		fmpz_poly_add(fmpz_poly_mat_entry(mapb, i, 0), fmpz_poly_mat_entry(mapb, i, 0), fmpz_poly_mat_entry(sp1, i, 0));
+		fmpz_poly_rem_basecase(fmpz_poly_mat_entry(mapb, i, 0), fmpz_poly_mat_entry(mapb, i, 0), fx);
+                fmpz_poly_scalar_smod_fmpz(fmpz_poly_mat_entry(mapb, i, 0), fmpz_poly_mat_entry(mapb, i, 0), qq);
 	}
 	fmpz_poly_mat_clear(sp1);
 	free(param);
@@ -603,14 +603,16 @@ void powers(fmpz_poly_mat_t po, fmpz_poly_mat_t x, fmpz_t qq)
 {
 	long xrow = fmpz_poly_mat_nrows(x);
 	long len = fmpz_clog(qq, t);
+	long qrow = xrow * len;
 	long i, j;
-
+	fmpz_poly_mat_init(po, qrow, 1);
 	for( i = 0 ; i < xrow ; i++) {
 		fmpz_poly_set(fmpz_poly_mat_entry(po, i, 0), fmpz_poly_mat_entry(x, i, 0));
 	}
 	for( i = 1 ; i < len ; i++) {
 		for( j = 0 ; j < xrow ; j++) {
 			fmpz_poly_scalar_mul_fmpz(fmpz_poly_mat_entry(po, j + i * xrow, 0), fmpz_poly_mat_entry(po, j + (i-1)*xrow, 0), t);
+			fmpz_poly_scalar_smod_fmpz(fmpz_poly_mat_entry(po, j + i * xrow, 0), fmpz_poly_mat_entry(po , j + i * xrow, 0), qq);
 		}
 	}
 }
