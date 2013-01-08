@@ -85,7 +85,7 @@ param_node_t *hcrypt_bgv_setup(int lamda, int level, int b, param_node_t *param)
 void vec_tensor(fmpz_poly_mat_t tensor, fmpz_poly_mat_t x, fmpz_t qq);//
 key_node_t *hcrypt_bgv_keygen(key_node_t *kn, param_node_t *param);//
 ciphertext_t *hcrypt_bgv_encrypt(ciphertext_t *ct, param_node_t *param, fmpz_poly_mat_t pk, fmpz_poly_t ms);
-void hcrypt_bgv_decrypt(fmpz_poly_t ms, param_node_t *param, fmpz_poly_mat_t sk, fmpz_poly_mat_t ct);
+void hcrypt_bgv_decrypt(fmpz_poly_t ms, param_node_t *param, fmpz_poly_mat_t sk, ciphertext_t *ct);
 ciphertext_t *hcrypt_bgv_add(ciphertext_t *c, pk_node_t *pbk, ciphertext_t *c1, ciphertext_t *c2);
 ciphertext_t *hcrypt_bgv_mul(ciphertext_t *c, pk_node_t *pbk, ciphertext_t *c1, ciphertext_t *c2);
 
@@ -260,7 +260,7 @@ void hcrypt_bgv_decrypt(fmpz_poly_t ms, param_node_t *param, fmpz_poly_mat_t sk,
 		tmp = tmp->next;
 		i--;
 	}
-        e_decrypt(ms, param, tmp->sk, ct);
+        e_decrypt(ms, param, tmp->sk, ct->text);
 }
 
 ciphertext_t *hcrypt_bgv_encrypt(ciphertext_t *ct, param_node_t *param, fmpz_poly_mat_t pk, fmpz_poly_t ms)
